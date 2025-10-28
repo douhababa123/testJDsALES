@@ -4,7 +4,7 @@
 
 ## 🎯 功能特点
 
-- **自动化爬取**：使用 Playwright 自动化浏览器爬取京东冰箱新品数据
+- **后台爬取**：使用轻量级 HTTP 爬虫后台拉取京东冰箱新品数据，减少浏览器指纹暴露
 - **智能品牌映射**：自动将京东品牌名称映射到对应的 Excel Sheet
 - **精准比对**：忽略大小写和空格，准确比对型号
 - **实时进度**：显示爬取和比对的实时进度
@@ -65,15 +65,22 @@ C9: BCD-003
 
 ### 2. 京东数据爬取
 
-系统自动执行以下操作：
+新版爬虫不再依赖浏览器，而是通过 JD 的搜索接口后台拉取商品列表，并异步访问商品详情页。
 
-1. 访问京东冰箱搜索页
-2. 点击"新品"筛选
-3. 点击"更多"按钮
-4. 取消"仅显示有货"选项
-5. 遍历所有分页
-6. 进入每个商品详情页
-7. 提取品牌和"能效网规格型号"
+核心步骤：
+
+1. 调用 `https://search.jd.com/s_new.php` 获取分页商品列表
+2. 解析 `data-sku` 列表拿到商品 SKU
+3. 异步请求 PC 端和移动端详情页，提取品牌、门店和“能效网规格型号”
+4. 内置重试、限速和代理轮换逻辑，降低触发风控的概率
+
+### 2.1 反爬策略
+
+- **限速**：默认请求间隔 1s，带抖动，防止出现固定频率
+- **重试**：指数退避，自动重试网络失败或 403
+- **指纹分散**：随机 UA、Referer，支持自定义请求头
+- **代理轮换**：可传入代理池实现出口 IP 轮换
+- **多端兜底**：优先解析 PC 详情页，缺失型号时回退到移动端详情页
 
 ### 3. 品牌映射
 
@@ -102,6 +109,22 @@ C9: BCD-003
   - 汇总 Sheet：包含所有品牌的缺失型号
   - 品牌 Sheet：每个品牌单独一个 Sheet
 
+### 6. 后台爬虫调用示例
+
+```python
+from utils.jd_scraper import JDScraper, ScraperConfig
+
+config = ScraperConfig(keyword="冰箱", max_pages=5, proxy_pool=["http://user:pass@proxy:8888"])
+
+async with JDScraper(config) as scraper:
+    async for product in scraper.iter_products():
+        print(product.sku, product.brand, product.model)
+```
+
+## 🛠️ 开发调试
+
+如需在本地使用 VS Code 进行调试，请参考 [VS Code 调试指南](./VSCODE_SETUP.md)。
+
 ## 📁 项目结构
 
 ```
@@ -111,7 +134,7 @@ C9: BCD-003
 │   ├── excel_handler.py        # Excel 文件处理
 │   ├── brand_mapper.py         # 品牌映射逻辑
 │   ├── model_comparator.py     # 型号比对逻辑
-│   ├── jd_scraper.py          # 京东爬虫
+│   ├── jd_scraper.py          # 京东后台异步爬虫
 │   └── excel_exporter.py       # Excel 结果导出
 ├── .streamlit/
 │   └── config.toml            # Streamlit 配置
